@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Мобільний PDF Перекладач</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f6f8;
+            color: #333;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* --- ЛІВА ПАНЕЛЬ (Верхня на телефоні) --- */
+        .left-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid #dcdde1;
+            background-color: #e9ecef;
+            overflow: hidden;
+        }
+        
+        .header-controls {
+            background: #fff;
+            padding: 10px 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            z-index: 10;
+        }
+
+        #fileInput {
+            max-width: 60%;
+            font-size: 14px;
+        }
+
+        #pageInfo {
+            font-weight: bold;
+            color: #2c3e50;
+            background: #f1f2f6;
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 14px;
+            white-space: nowrap;
+        }
+
+        /* КОНТЕЙНЕР ДЛЯ СКРОЛІНГУ */
+        .pdf-scroll-container {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 20px 0;
+            background-color: #8395a7; 
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px; 
+        }
+
+        .page-wrapper {
+            position: relative;
+            background-color: white;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .loading-text {
+            color: #7f8fa6;
+            font-style: italic;
+            font-size: 14px;
+        }
+
+        canvas {
+            display: block;
+            max-width: 100%;
+        }
+
+        /* --- ШАР ТЕКСТУ --- */
+        .text-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            color: transparent; 
+            overflow: hidden;
+        }
+        .text-layer span {
+            position: absolute;
+            cursor: text;
+            white-space: pre;
+            transform-origin: left bottom;
+            display: inline-block; 
+        }
+        .text-layer ::selection {
+            background: rgba(52, 152, 219, 0.3); 
+            color: transparent;
+        }
+
+        /* --- ПРАВА ПАНЕЛЬ (Нижня на телефоні) --- */
+        .right-panel {
+            width: 400px;
+            background-color: #fff;
+            display: flex;
+            flex-direction: column;
+            box-shadow: -2px 0 10px rgba(0,0,0,0.05);
+        }
+
+        .translator-header {
+            padding: 10px 15px;
+            border-bottom: 1px solid #f1f2f6;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .translator-title {
+            font-size: 15px;
+            font-weight: bold;
+            color: #2f3640;
+        }
+
+        .lang-select-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 15px;
+            background-color: #f8f9fa;
+            border-bottom: 1px solid #f1f2f6;
+        }
+
+        .lang-box {
+            padding: 4px 8px;
+            border: 1px solid #dcdde1;
+            border-radius: 4px;
+            background: #fff;
+            font-size: 13px;
+            color: #7f8fa6;
+        }
+
+        .swap-icon {
+            color: #3498db;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        .text-areas {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            padding: 10px 15px;
+            gap: 10px;
+        }
+
+        textarea {
+            flex: 1;
+            width: 100%;
+            border: none;
+            resize: none;
+            font-family: inherit;
+            font-size: 15px;
+            line-height: 1.4;
+            color: #2f3640;
+            box-sizing: border-box;
+            background: transparent;
+        }
+        
+        textarea:focus { outline: none; }
+        
+        #translatedText {
+            border-top: 1px solid #f1f2f6;
+            padding-top: 10px;
+            color: #2c3e50;
+        }
+
+        /* ========================================= */
+        /* АДАПТИВНІСТЬ ДЛЯ МОБІЛЬНИХ ТЕЛЕФОНІВ      */
+        /* ========================================= */
+        @media (max-width: 768px) {
+            body {
+                flex-direction: column; /* Змінюємо розташування на вертикальне */
+            }
+            .left-panel {
+                border-right: none;
+                border-bottom: 2px solid #bdc3c7;
+                flex: 0 0 60vh; /* PDF займає верхні 60% екрану */
+            }
+            .right-panel {
+                width: 100%;
+                flex: 0 0 40vh; /* Перекладач займає нижні 40% екрану */
+                box-shadow: 0 -4px 10px rgba(0,0,0,0.1);
+            }
+            .text-areas {
+                flex-direction: row; /* На телефоні краще розмістити вікна перекладу пліч-о-пліч або залишити колонкою. Залишаємо колонкою для читабельності довгих текстів */
+                flex-direction: column;
+            }
+            textarea {
+                font-size: 14px; /* Менший шрифт для телефону */
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="left-panel">
+        <div class="header-controls">
+            <input type="file" id="fileInput" accept="application/pdf" onchange="handleFileUpload(event)">
+            <div id="pageInfo">0 / 0</div>
+        </div>
+        
+        <div class="pdf-scroll-container" id="scrollContainer">
+            </div>
+    </div>
+
+    <div class="right-panel">
+        <div class="translator-header">
+            <span class="translator-title">Перекладач</span>
+        </div>
+        <div class="lang-select-row">
+            <div class="lang-box">Англійська (авто)</div>
+            <div class="swap-icon">⇄</div>
+            <div class="lang-box">Українська</div>
+        </div>
+        <div class="text-areas">
+            <textarea id="sourceText" placeholder="Виділіть текст..."></textarea>
+            <textarea id="translatedText" placeholder="Переклад..." readonly></textarea>
+        </div>
+    </div>
+
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+
+        let currentPdf = null;
+        let observer = null;
+
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file || file.type !== "application/pdf") return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const typedarray = new Uint8Array(e.target.result);
+                pdfjsLib.getDocument(typedarray).promise.then(pdf => {
+                    currentPdf = pdf;
+                    initScrollablePages();
+                });
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function initScrollablePages() {
+            const container = document.getElementById('scrollContainer');
+            container.innerHTML = ''; 
+            document.getElementById('pageInfo').innerText = `Завантаження...`;
+
+            observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        const pageNum = parseInt(entry.target.dataset.pageNum);
+                        
+                        if (!entry.target.dataset.rendered) {
+                            renderPageIntoWrapper(pageNum, entry.target);
+                            entry.target.dataset.rendered = "true";
+                        }
+                        
+                        document.getElementById('pageInfo').innerText = `${pageNum} / ${currentPdf.numPages}`;
+                    }
+                });
+            }, { 
+                root: container, 
+                rootMargin: '600px' 
+            });
+
+            for (let i = 1; i <= currentPdf.numPages; i++) {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'page-wrapper';
+                wrapper.dataset.pageNum = i;
+                
+                // На мобільному екрані робимо "скелети" вужчими за замовчуванням
+                const isMobile = window.innerWidth <= 768;
+                wrapper.style.minHeight = isMobile ? '400px' : '800px'; 
+                wrapper.style.width = isMobile ? '95%' : '600px'; 
+                
+                wrapper.innerHTML = `<div class="loading-text">Завантаження сторінки ${i}...</div>`;
+                
+                container.appendChild(wrapper);
+                observer.observe(wrapper); 
+            }
+        }
+
+        function renderPageIntoWrapper(pageNum, wrapper) {
+            currentPdf.getPage(pageNum).then(page => {
+                const containerWidth = document.getElementById('scrollContainer').clientWidth;
+                const unscaledViewport = page.getViewport({ scale: 1.0 });
+                
+                // АДАПТИВНИЙ МАСШТАБ: Якщо екран мобільний, підганяємо ширину PDF під ширину екрану
+                const isMobile = window.innerWidth <= 768;
+                const scale = isMobile ? (containerWidth * 0.95) / unscaledViewport.width : 1.5;
+                const viewport = page.getViewport({ scale: scale });
+                
+                wrapper.innerHTML = ''; 
+                wrapper.style.minHeight = 'auto';
+                wrapper.style.width = viewport.width + 'px';
+                wrapper.style.height = viewport.height + 'px';
+
+                const canvas = document.createElement('canvas');
+                canvas.width = viewport.width;
+                canvas.height = viewport.height;
+                wrapper.appendChild(canvas);
+
+                const textLayer = document.createElement('div');
+                textLayer.className = 'text-layer';
+                wrapper.appendChild(textLayer);
+
+                const renderContext = { canvasContext: canvas.getContext('2d'), viewport: viewport };
+                page.render(renderContext);
+
+                page.getTextContent().then(textContent => {
+                    textContent.items.forEach(item => {
+                        const span = document.createElement('span');
+                        span.textContent = item.str + ' ';
+                        
+                        const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
+                        const fontSize = Math.sqrt((tx[2] * tx[2]) + (tx[3] * tx[3]));
+                        
+                        span.style.left = tx[4] + 'px';
+                        span.style.top = (tx[5] - fontSize * 0.85) + 'px';
+                        span.style.fontSize = fontSize + 'px';
+                        span.style.height = fontSize + 'px';
+                        span.style.lineHeight = fontSize + 'px';
+                        span.style.fontFamily = item.fontName || 'sans-serif';
+                        
+                        textLayer.appendChild(span);
+                    });
+                });
+            });
+        }
+
+        // Обробка виділення тексту
+        const sourceTextArea = document.getElementById('sourceText');
+        const translatedTextArea = document.getElementById('translatedText');
+
+        function handleTextSelection(e) {
+            // Перевіряємо, чи клік був по шару тексту
+            if (!e.target.closest('.text-layer')) return;
+
+            setTimeout(async () => {
+                const selection = window.getSelection();
+                const text = selection.toString().trim();
+                
+                if (text.length > 0) {
+                    sourceTextArea.value = text;
+                    translatedTextArea.value = "⏳ Перекладаємо...";
+
+                    try {
+                        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=uk&dt=t&q=${encodeURIComponent(text)}`;
+                        const response = await fetch(url);
+                        const data = await response.json();
+                        
+                        if (data && data[0]) {
+                            const fullTranslation = data[0].map(sentence => sentence[0]).join(' ');
+                            translatedTextArea.value = fullTranslation;
+                        }
+                    } catch (err) {
+                        translatedTextArea.value = "Помилка сервера. Перевірте підключення.";
+                    }
+                }
+            }, 150); // Легка затримка для мобільних браузерів, щоб виділення встигло зафіксуватись
+        }
+
+        // Слухаємо мишку на комп'ютері та торкання пальцем на телефоні
+        document.addEventListener('mouseup', handleTextSelection);
+        document.addEventListener('touchend', handleTextSelection);
+
+        sourceTextArea.addEventListener('input', debounce(async function() {
+            const text = sourceTextArea.value.trim();
+            if (text.length === 0) {
+                translatedTextArea.value = "";
+                return;
+            }
+            
+            translatedTextArea.value = "⏳ Перекладаємо...";
+            try {
+                const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=uk&dt=t&q=${encodeURIComponent(text)}`;
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (data && data[0]) {
+                    translatedTextArea.value = data[0].map(sentence => sentence[0]).join(' ');
+                }
+            } catch (err) {
+                translatedTextArea.value = "Помилка перекладу.";
+            }
+        }, 800));
+
+        function debounce(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => {
+                    clearTimeout(timeout);
+                    func(...args);
+                };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
+        }
+    </script>
+</body>
+</html>
